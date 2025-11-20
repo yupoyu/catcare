@@ -12,10 +12,11 @@ import {
   ReferenceLine,
   Legend
 } from 'recharts';
-import { LogEntry, LogCategory } from '../types';
+import { LogEntry, LogCategory, AppSettings } from '../types';
 
 interface ChartsProps {
   logs: LogEntry[];
+  settings: AppSettings;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -44,7 +45,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export const HealthCharts: React.FC<ChartsProps> = ({ logs }) => {
+export const HealthCharts: React.FC<ChartsProps> = ({ logs, settings }) => {
   const glucoseData = useMemo(() => {
     return logs
       .filter(l => l.category === LogCategory.GLUCOSE)
@@ -139,8 +140,8 @@ export const HealthCharts: React.FC<ChartsProps> = ({ logs }) => {
                   unit=" mg"
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <ReferenceLine y={70} label="低血糖" stroke="red" strokeDasharray="3 3" />
-                <ReferenceLine y={250} label="高血糖" stroke="orange" strokeDasharray="3 3" />
+                <ReferenceLine y={settings.glucoseLow} label="低血糖" stroke="red" strokeDasharray="3 3" />
+                <ReferenceLine y={settings.glucoseHigh} label="高血糖" stroke="orange" strokeDasharray="3 3" />
                 <Line
                   type="monotone"
                   dataKey="value"
@@ -180,8 +181,8 @@ export const HealthCharts: React.FC<ChartsProps> = ({ logs }) => {
                   stroke="transparent"
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <ReferenceLine y={0.6} stroke="#F59E0B" strokeDasharray="3 3" />
-                <ReferenceLine y={1.5} label="危險" stroke="#EF4444" strokeDasharray="3 3" />
+                <ReferenceLine y={settings.ketoneWarning} stroke="#F59E0B" strokeDasharray="3 3" />
+                <ReferenceLine y={settings.ketoneDanger} label="危險" stroke="#EF4444" strokeDasharray="3 3" />
                 <Line
                   type="monotone"
                   dataKey="value"
@@ -218,6 +219,12 @@ export const HealthCharts: React.FC<ChartsProps> = ({ logs }) => {
                 />
                 <Tooltip content={<CustomTooltip />} cursor={{fill: '#f9fafb'}} />
                 <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                {settings.dailyFeedingTarget > 0 && (
+                  <ReferenceLine y={settings.dailyFeedingTarget} label="灌食目標" stroke="#F97316" strokeDasharray="5 5" />
+                )}
+                 {settings.dailySalineTarget > 0 && (
+                  <ReferenceLine y={settings.dailySalineTarget} label="輸液目標" stroke="#06B6D4" strokeDasharray="5 5" />
+                )}
                 <Bar dataKey="feeding" name="灌食 (ml)" stackId="a" fill="#F97316" radius={[0, 0, 4, 4]} barSize={20} unit="ml" />
                 <Bar dataKey="saline" name="輸液 (ml)" stackId="a" fill="#06B6D4" radius={[4, 4, 0, 0]} barSize={20} unit="ml" />
               </BarChart>

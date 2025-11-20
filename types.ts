@@ -29,4 +29,13 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface AppSettings {
+  glucoseLow: number;     // Default 70
+  glucoseHigh: number;    // Default 250
+  ketoneWarning: number;  // Default 0.6
+  ketoneDanger: number;   // Default 1.5
+  dailyFeedingTarget: number; // Default 0 (Disabled if 0)
+  dailySalineTarget: number;  // Default 0 (Disabled if 0)
+}
+
 export type Tab = 'dashboard' | 'log' | 'history' | 'assistant';

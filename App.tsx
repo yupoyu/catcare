@@ -1,30 +1,62 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { LogEntry, LogCategory, Units, Tab } from './types';
+import React, { useState, useEffect, useRef } from 'react';
+import { LogEntry, LogCategory, Units, Tab, AppSettings } from './types';
 import { HealthCharts } from './components/Charts';
 import { AiChat } from './components/AiChat';
-import { Plus, Droplets, Syringe, Utensils, Activity, Trash2, Clock, Calendar, Home, MessageCircle, ChevronRight, AlertCircle } from 'lucide-react';
+import { 
+  Plus, Droplets, Syringe, Utensils, Activity, Trash2, Clock, Calendar, 
+  Home, MessageCircle, ChevronRight, AlertCircle, Settings, Lock, Unlock, 
+  Download, Upload, FileJson, X, Save
+} from 'lucide-react';
 
 // Simple Helper to get local storage
 const STORAGE_KEY = 'cat_care_logs_v1';
+const SETTINGS_KEY = 'cat_care_settings_v1';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  glucoseLow: 70,
+  glucoseHigh: 250,
+  ketoneWarning: 0.6,
+  ketoneDanger: 1.5,
+  dailyFeedingTarget: 0,
+  dailySalineTarget: 0
+};
 
 function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<LogCategory | null>(null);
+  
+  // Admin State
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form State
   const [inputValue, setInputValue] = useState('');
   const [inputNote, setInputNote] = useState('');
   const [entryDate, setEntryDate] = useState('');
 
+  // --- Effects ---
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    const savedLogs = localStorage.getItem(STORAGE_KEY);
+    if (savedLogs) {
       try {
-        setLogs(JSON.parse(saved));
+        setLogs(JSON.parse(savedLogs));
       } catch (e) {
         console.error("Failed to load logs", e);
+      }
+    }
+
+    const savedSettings = localStorage.getItem(SETTINGS_KEY);
+    if (savedSettings) {
+      try {
+        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) });
+      } catch (e) {
+        console.error("Failed to load settings", e);
       }
     }
   }, []);
@@ -32,6 +64,12 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
   }, [logs]);
+
+  useEffect(() => {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }, [settings]);
+
+  // --- Actions ---
 
   const openLogModal = (category: LogCategory) => {
     setSelectedCategory(category);
@@ -75,13 +113,60 @@ function App() {
     }
   };
 
-  // --- Helper Functions for Logic ---
+  const handleLogin = () => {
+    if (passwordInput === '1234') {
+      setIsAuthenticated(true);
+      setAuthError(false);
+      setPasswordInput('');
+    } else {
+      setAuthError(true);
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setIsAdminModalOpen(false);
+  };
+
+  const handleExportData = () => {
+    const dataStr = JSON.stringify({ logs, settings }, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `cat_care_backup_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const data = JSON.parse(content);
+        if (data.logs) setLogs(data.logs);
+        if (data.settings) setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
+        alert('資料匯入成功！');
+      } catch (err) {
+        alert('資料格式錯誤，無法匯入。');
+      }
+    };
+    reader.readAsText(file);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // --- Helper Functions ---
 
   const getLatest = (cat: LogCategory) => logs.find(l => l.category === cat);
 
   const getDailyTotal = (cat: LogCategory) => {
     const today = new Date();
-    // Reset to start of today 00:00 for comparison
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     
     return logs
@@ -100,22 +185,21 @@ function App() {
     return `${Math.floor(hours / 24)} 天前`;
   };
 
-  // Color Coding for Abnormal Values
   const getStatusColor = (category: LogCategory, value: number, isBg = false) => {
     if (category === LogCategory.GLUCOSE) {
-      if (value < 70) return isBg ? 'bg-red-50 border-red-100 text-red-700' : 'text-red-600'; // Hypo
-      if (value > 250) return isBg ? 'bg-orange-50 border-orange-100 text-orange-700' : 'text-orange-600'; // High
+      if (value < settings.glucoseLow) return isBg ? 'bg-red-50 border-red-100 text-red-700' : 'text-red-600';
+      if (value > settings.glucoseHigh) return isBg ? 'bg-orange-50 border-orange-100 text-orange-700' : 'text-orange-600';
       return isBg ? 'bg-white border-gray-100' : 'text-blue-600';
     }
     if (category === LogCategory.KETONE) {
-      if (value >= 1.5) return isBg ? 'bg-red-50 border-red-100 text-red-700' : 'text-red-600'; // Danger
-      if (value >= 0.6) return isBg ? 'bg-orange-50 border-orange-100 text-orange-700' : 'text-orange-600'; // Warning
+      if (value >= settings.ketoneDanger) return isBg ? 'bg-red-50 border-red-100 text-red-700' : 'text-red-600';
+      if (value >= settings.ketoneWarning) return isBg ? 'bg-orange-50 border-orange-100 text-orange-700' : 'text-orange-600';
       return isBg ? 'bg-white border-gray-100' : 'text-purple-600';
     }
     return isBg ? 'bg-white border-gray-100' : 'text-gray-700';
   };
 
-  // --- Render Functions ---
+  // --- Render Components ---
 
   const renderDashboard = () => {
     const latestGlucose = getLatest(LogCategory.GLUCOSE);
@@ -123,8 +207,22 @@ function App() {
     const latestFeeding = getLatest(LogCategory.FEEDING);
     const latestSaline = getLatest(LogCategory.SALINE);
 
+    const dailyFeeding = getDailyTotal(LogCategory.FEEDING);
+    const dailySaline = getDailyTotal(LogCategory.SALINE);
+
     return (
       <div className="space-y-6 pb-24">
+        {/* Header with Admin Button */}
+        <div className="flex justify-between items-center px-1">
+          <h1 className="text-xl font-bold text-gray-800">健康儀表板</h1>
+          <button 
+            onClick={() => setIsAdminModalOpen(true)} 
+            className="p-2 bg-white rounded-full shadow-sm border border-gray-100 text-gray-500 hover:text-teal-600 active:scale-95 transition-all"
+          >
+            {isAuthenticated ? <Settings size={20} /> : <Lock size={20} />}
+          </button>
+        </div>
+
         {/* Status Grid */}
         <div className="grid grid-cols-2 gap-3">
           {/* Glucose Card */}
@@ -143,7 +241,7 @@ function App() {
                  </div>
               )}
             </div>
-            {latestGlucose && (latestGlucose.value < 70 || latestGlucose.value > 250) && (
+            {latestGlucose && (latestGlucose.value < settings.glucoseLow || latestGlucose.value > settings.glucoseHigh) && (
               <AlertCircle className="absolute top-2 right-2 text-red-500/20" size={48} />
             )}
           </div>
@@ -164,36 +262,56 @@ function App() {
                  </div>
               )}
             </div>
-            {latestKetone && latestKetone.value >= 0.6 && (
-               <AlertCircle className={`absolute top-2 right-2 ${latestKetone.value >= 1.5 ? 'text-red-500/20' : 'text-orange-500/20'}`} size={48} />
+            {latestKetone && latestKetone.value >= settings.ketoneWarning && (
+               <AlertCircle className={`absolute top-2 right-2 ${latestKetone.value >= settings.ketoneDanger ? 'text-red-500/20' : 'text-orange-500/20'}`} size={48} />
             )}
           </div>
 
           {/* Feeding Summary */}
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-24">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between min-h-24">
              <div className="flex justify-between items-start">
                 <div className="flex items-center gap-2 text-orange-500">
                   <Utensils size={16} />
                   <span className="font-bold text-sm text-gray-600">今日灌食</span>
                 </div>
-                <span className="text-2xl font-bold text-gray-800">{getDailyTotal(LogCategory.FEEDING)}<span className="text-xs text-gray-400 font-normal ml-1">ml</span></span>
              </div>
-             <div className="text-xs text-gray-400">
-                上次：{latestFeeding ? getTimeSince(latestFeeding.timestamp) : '無'}
+             <div>
+               <span className="text-2xl font-bold text-gray-800">{dailyFeeding}<span className="text-xs text-gray-400 font-normal ml-1">ml</span></span>
+               {settings.dailyFeedingTarget > 0 && (
+                 <div className="w-full bg-gray-100 rounded-full h-1.5 mt-2">
+                   <div 
+                    className="bg-orange-500 h-1.5 rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min((dailyFeeding / settings.dailyFeedingTarget) * 100, 100)}%` }}
+                   ></div>
+                 </div>
+               )}
+               {settings.dailyFeedingTarget > 0 && (
+                 <div className="text-[10px] text-gray-400 mt-1 text-right">目標: {settings.dailyFeedingTarget}ml</div>
+               )}
              </div>
           </div>
 
           {/* Saline Summary */}
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between h-24">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between min-h-24">
              <div className="flex justify-between items-start">
                 <div className="flex items-center gap-2 text-cyan-500">
                   <Syringe size={16} />
                   <span className="font-bold text-sm text-gray-600">今日輸液</span>
                 </div>
-                <span className="text-2xl font-bold text-gray-800">{getDailyTotal(LogCategory.SALINE)}<span className="text-xs text-gray-400 font-normal ml-1">ml</span></span>
              </div>
-             <div className="text-xs text-gray-400">
-                上次：{latestSaline ? getTimeSince(latestSaline.timestamp) : '無'}
+             <div>
+                <span className="text-2xl font-bold text-gray-800">{dailySaline}<span className="text-xs text-gray-400 font-normal ml-1">ml</span></span>
+                {settings.dailySalineTarget > 0 && (
+                 <div className="w-full bg-gray-100 rounded-full h-1.5 mt-2">
+                   <div 
+                    className="bg-cyan-500 h-1.5 rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min((dailySaline / settings.dailySalineTarget) * 100, 100)}%` }}
+                   ></div>
+                 </div>
+               )}
+               {settings.dailySalineTarget > 0 && (
+                 <div className="text-[10px] text-gray-400 mt-1 text-right">目標: {settings.dailySalineTarget}ml</div>
+               )}
              </div>
           </div>
         </div>
@@ -285,10 +403,10 @@ function App() {
         詳細紀錄表
       </h2>
       {logs.map(log => {
-        // Determine styling based on abnormal values
+        // Determine styling based on settings
         const isAbnormal = 
-          (log.category === LogCategory.GLUCOSE && (log.value < 70 || log.value > 250)) ||
-          (log.category === LogCategory.KETONE && log.value >= 0.6);
+          (log.category === LogCategory.GLUCOSE && (log.value < settings.glucoseLow || log.value > settings.glucoseHigh)) ||
+          (log.category === LogCategory.KETONE && log.value >= settings.ketoneWarning);
           
         return (
         <div key={log.id} className={`bg-white p-4 rounded-xl shadow-sm border relative group transition-all ${isAbnormal ? 'border-l-4 border-l-red-500 border-gray-100' : 'border-gray-100'}`}>
@@ -328,6 +446,144 @@ function App() {
     </div>
   );
 
+  const renderAdminModal = () => {
+    if (!isAdminModalOpen) return null;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-[slideUp_0.3s_ease-out] max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+              <Settings size={24} className="text-gray-600" />
+              管理者設定
+            </h3>
+            <button onClick={() => setIsAdminModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <X size={24} />
+            </button>
+          </div>
+
+          {!isAuthenticated ? (
+            <div className="text-center space-y-6 py-4">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto text-gray-400">
+                <Lock size={32} />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 mb-2">請輸入管理者密碼 (預設: 1234)</p>
+                <input 
+                  type="password" 
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="PIN Code"
+                  className={`w-full text-center text-2xl tracking-widest py-2 border-b-2 outline-none transition-colors ${authError ? 'border-red-500 text-red-500' : 'border-gray-200 focus:border-teal-500'}`}
+                  maxLength={4}
+                />
+                {authError && <p className="text-xs text-red-500 mt-2">密碼錯誤</p>}
+              </div>
+              <button 
+                onClick={handleLogin}
+                className="w-full bg-teal-600 text-white font-bold py-3 rounded-xl hover:bg-teal-700 transition-colors"
+              >
+                登入
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Health Thresholds */}
+              <div>
+                <h4 className="text-sm font-bold text-gray-500 uppercase mb-3 tracking-wider border-b pb-1">警示值設定</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm text-gray-700">低血糖警示 (mg/dL)</label>
+                    <input 
+                      type="number" 
+                      value={settings.glucoseLow}
+                      onChange={(e) => setSettings({...settings, glucoseLow: Number(e.target.value)})}
+                      className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-right"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm text-gray-700">高血糖警示 (mg/dL)</label>
+                    <input 
+                      type="number" 
+                      value={settings.glucoseHigh}
+                      onChange={(e) => setSettings({...settings, glucoseHigh: Number(e.target.value)})}
+                      className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-right"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm text-gray-700">血酮危險值 (mmol/L)</label>
+                    <input 
+                      type="number" 
+                      step="0.1"
+                      value={settings.ketoneDanger}
+                      onChange={(e) => setSettings({...settings, ketoneDanger: Number(e.target.value)})}
+                      className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-right"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily Targets */}
+              <div>
+                <h4 className="text-sm font-bold text-gray-500 uppercase mb-3 tracking-wider border-b pb-1">每日目標</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm text-gray-700">每日灌食目標 (ml)</label>
+                    <input 
+                      type="number" 
+                      value={settings.dailyFeedingTarget}
+                      onChange={(e) => setSettings({...settings, dailyFeedingTarget: Number(e.target.value)})}
+                      className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-right"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm text-gray-700">每日輸液目標 (ml)</label>
+                    <input 
+                      type="number" 
+                      value={settings.dailySalineTarget}
+                      onChange={(e) => setSettings({...settings, dailySalineTarget: Number(e.target.value)})}
+                      className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-right"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">* 設定為 0 代表不顯示目標進度條</p>
+                </div>
+              </div>
+
+              {/* Data Management */}
+              <div>
+                <h4 className="text-sm font-bold text-gray-500 uppercase mb-3 tracking-wider border-b pb-1">資料管理</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={handleExportData} className="flex items-center justify-center gap-2 bg-blue-50 text-blue-600 py-3 rounded-xl hover:bg-blue-100 transition-colors">
+                    <Download size={18} />
+                    備份資料
+                  </button>
+                  <label className="flex items-center justify-center gap-2 bg-green-50 text-green-600 py-3 rounded-xl hover:bg-green-100 transition-colors cursor-pointer">
+                    <Upload size={18} />
+                    還原資料
+                    <input 
+                      type="file" 
+                      accept=".json" 
+                      ref={fileInputRef}
+                      className="hidden" 
+                      onChange={handleImportData}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <button 
+                onClick={handleLogout}
+                className="w-full border border-gray-200 text-gray-500 font-medium py-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Unlock size={18} /> 登出管理者模式
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen w-full max-w-md mx-auto bg-gray-50 text-gray-900 relative overflow-hidden">
       {/* Main Content Area */}
@@ -340,7 +596,7 @@ function App() {
                <Activity className="text-teal-600" />
                健康趨勢圖
              </h2>
-             <HealthCharts logs={logs} />
+             <HealthCharts logs={logs} settings={settings} />
           </div>
         )}
         {activeTab === 'assistant' && <AiChat />}
@@ -444,6 +700,8 @@ function App() {
           </div>
         </div>
       )}
+
+      {renderAdminModal()}
       
       <style>{`
         @keyframes slideUp {
