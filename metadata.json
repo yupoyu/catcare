@@ -1,0 +1,5 @@
+{
+  "name": "CatCare Pro - 重症貓照護助手",
+  "description": "A dedicated care assistant for tracking blood glucose, ketones, feeding, and medication for cats recovering from critical illness. Includes AI support.",
+  "requestFramePermissions": []
+}
